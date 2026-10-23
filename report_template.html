@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Hendon Mob Photo Audit</title>
+<style>
+:root{
+  --bg:#f7f7f5; --panel:#fff; --ink:#151515; --muted:#6b6b6b; --line:#e4e4e0;
+  --exact:#c62828; --crop:#d9730d; --possible:#8a7a00; --no:#5f6b6b; --gap:#9a9a9a;
+  --chip:#efefeb; --chip-on:#151515; --chip-on-ink:#fff;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#121212; --panel:#1b1b1b; --ink:#ededed; --muted:#9a9a9a; --line:#2c2c2c;
+    --exact:#ff6b6b; --crop:#ffa64d; --possible:#e0cc4a; --no:#8fa0a0; --gap:#777;
+    --chip:#262626; --chip-on:#ededed; --chip-on-ink:#121212;}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:28px 16px 60px}
+h1{font-size:26px;margin:0 0 4px;letter-spacing:-.01em}
+.sub{color:var(--muted);margin:0 0 22px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;cursor:pointer}
+.stat b{display:block;font-size:24px;font-variant-numeric:tabular-nums}
+.stat span{color:var(--muted);font-size:13px}
+.stat.exact b{color:var(--exact)} .stat.crop b{color:var(--crop)} .stat.possible b{color:var(--possible)}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+.chip{border:0;background:var(--chip);color:var(--ink);padding:7px 12px;border-radius:999px;font:inherit;font-size:13px;cursor:pointer}
+.chip.on{background:var(--chip-on);color:var(--chip-on-ink)}
+input[type=search]{flex:1;min-width:180px;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:inherit}
+.dl{margin-left:auto;font-size:13px;color:var(--muted)}
+.dl a{color:inherit}
+.list{display:flex;flex-direction:column;gap:10px}
+.row{display:grid;grid-template-columns:48px 1.2fr 170px 170px 150px;gap:14px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+.rank{color:var(--muted);font-variant-numeric:tabular-nums}
+.name{font-weight:600}
+.name a{color:inherit;text-decoration:none}
+.links{font-size:13px;color:var(--muted)} .links a{color:inherit}
+.img{height:150px;background:var(--chip);border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;color:var(--gap);font-size:12px}
+.img img{max-width:100%;max-height:100%;display:block}
+.img a{display:contents}
+.cap{font-size:11px;color:var(--muted);margin-top:4px;text-align:center}
+.v{font-weight:700;font-size:13px;letter-spacing:.02em}
+.v.EXACT{color:var(--exact)} .v.CROP{color:var(--crop)} .v.POSSIBLE{color:var(--possible)}
+.v.NO{color:var(--no)} .v.gap{color:var(--gap)}
+.metrics{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.empty{padding:40px;text-align:center;color:var(--muted)}
+.legend{font-size:13px;color:var(--muted);margin:26px 0 0}
+@media (max-width:760px){
+  .row{grid-template-columns:1fr 1fr;grid-template-areas:"who who" "a b" "v v"}
+  .rank{display:none}
+  .who{grid-area:who} .ia{grid-area:a} .ib{grid-area:b} .res{grid-area:v}
+  .img{height:130px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Hendon Mob Photo Audit</h1>
+  <p class="sub">Top players on The Hendon Mob all-time money list, checked against PokerNews player profiles. Updated __STAMP__.</p>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="bar">
+    <div id="chips"></div>
+    <input type="search" id="q" placeholder="Search player">
+    <span class="dl"><a href="results.csv" download>Download CSV</a></span>
+  </div>
+
+  <div class="list" id="list"></div>
+
+  <p class="legend"><b>Same photo</b>: identical image, possibly resized or recompressed.
+  <b>Cropped</b>: Hendon Mob image is a crop or edit of a PokerNews photo.
+  <b>Possible</b>: weak similarity, check by eye.
+  Matching compares the photographs themselves, not faces.</p>
+</div>
+
+<script>
+const DATA = __DATA__;
+const HM = "__HENDON_PLAYER__", PN = "__PN_PROFILE__";
+const GROUPS = [
+  {k:"flagged", label:"All flagged", test:r=>["EXACT","CROP/EDIT","POSSIBLE"].includes(r.verdict)},
+  {k:"EXACT", label:"Same photo", test:r=>r.verdict==="EXACT", cls:"exact"},
+  {k:"CROP/EDIT", label:"Cropped", test:r=>r.verdict==="CROP/EDIT", cls:"crop"},
+  {k:"POSSIBLE", label:"Possible", test:r=>r.verdict==="POSSIBLE", cls:"possible"},
+  {k:"NO", label:"No match", test:r=>r.verdict==="NO"},
+  {k:"NO_PN_PROFILE", label:"No PokerNews profile", test:r=>r.verdict==="NO_PN_PROFILE"},
+  {k:"NO_HENDON_PHOTO", label:"No Hendon photo", test:r=>r.verdict==="NO_HENDON_PHOTO"},
+  {k:"ERROR", label:"Errors", test:r=>r.verdict==="ERROR"},
+  {k:"all", label:"All players", test:()=>true},
+];
+const LABEL = {"EXACT":"SAME PHOTO","CROP/EDIT":"CROPPED","POSSIBLE":"POSSIBLE","NO":"NO MATCH",
+  "NO_PN_PROFILE":"NO POKERNEWS PROFILE","NO_HENDON_PHOTO":"NO HENDON PHOTO","ERROR":"ERROR"};
+let current = "flagged", q = "";
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const count = g => DATA.filter(g.test).length;
+
+function renderStats(){
+  const show = ["flagged","EXACT","CROP/EDIT","POSSIBLE","NO_PN_PROFILE"].map(k=>GROUPS.find(g=>g.k===k));
+  document.getElementById("stats").innerHTML =
+    `<div class="stat" data-k="all"><b>${DATA.length}</b><span>Players checked</span></div>` +
+    show.map(g=>`<div class="stat ${g.cls||""}" data-k="${g.k}"><b>${count(g)}</b><span>${g.label}</span></div>`).join("");
+  document.querySelectorAll(".stat").forEach(el=>el.onclick=()=>{current=el.dataset.k;render();});
+}
+function renderChips(){
+  document.getElementById("chips").innerHTML = GROUPS.filter(g=>count(g)>0||g.k==="flagged").map(g=>
+    `<button class="chip ${g.k===current?"on":""}" data-k="${g.k}">${g.label} (${count(g)})</button>`).join(" ");
+  document.querySelectorAll(".chip").forEach(el=>el.onclick=()=>{current=el.dataset.k;render();});
+}
+function img(url, cap, link){
+  if(!url) return `<div class="img">no image</div><div class="cap">${cap}</div>`;
+  return `<div class="img"><a href="${esc(link||url)}" target="_blank" rel="noopener"><img src="${esc(url)}" loading="lazy" referrerpolicy="no-referrer" alt=""></a></div><div class="cap">${cap}</div>`;
+}
+function renderList(){
+  const g = GROUPS.find(x=>x.k===current);
+  const rows = DATA.filter(g.test).filter(r=>!q || r.name.toLowerCase().includes(q));
+  const el = document.getElementById("list");
+  if(!rows.length){ el.innerHTML = `<div class="empty">Nothing here.</div>`; return; }
+  el.innerHTML = rows.map(r=>{
+    const vcls = r.verdict==="CROP/EDIT"?"CROP":(["EXACT","POSSIBLE","NO"].includes(r.verdict)?r.verdict:"gap");
+    const pn = r.pokernews_slug ? `<a href="${PN}${esc(r.pokernews_slug)}/" target="_blank" rel="noopener">PokerNews</a>` : "";
+    const m = r.phash_dist>=0 ? `pHash distance ${r.phash_dist}<br>Feature matches ${r.orb_inliers}<br>${r.pokernews_images_checked} images checked` : esc(r.note);
+    return `<div class="row">
+      <div class="rank">#${r.rank}</div>
+      <div class="who"><div class="name"><a href="${HM}${esc(r.hendon_id)}" target="_blank" rel="noopener">${esc(r.name)}</a></div>
+        <div class="links"><a href="${HM}${esc(r.hendon_id)}" target="_blank" rel="noopener">Hendon Mob</a>${pn?" · "+pn:""}</div></div>
+      <div class="ia">${img(r.hendon_image,"Hendon Mob")}</div>
+      <div class="ib">${img(r.best_pn_image,"PokerNews")}</div>
+      <div class="res"><div class="v ${vcls}">${LABEL[r.verdict]||esc(r.verdict)}</div><div class="metrics">${m}</div></div>
+    </div>`;
+  }).join("");
+}
+function render(){ renderStats(); renderChips(); renderList(); }
+document.getElementById("q").oninput = e => { q = e.target.value.trim().toLowerCase(); renderList(); };
+render();
+</script>
+</body>
+</html>

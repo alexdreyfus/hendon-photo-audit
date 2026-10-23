@@ -1,0 +1,114 @@
+name: Photo audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      top:
+        description: "How many players from the top of the all-time money list"
+        default: "1000"
+      shards:
+        description: "Parallel runners (1 to 8)"
+        default: "4"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: photo-audit
+  cancel-in-progress: false
+
+jobs:
+  list:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+      shards: ${{ steps.m.outputs.shards }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements.txt
+      - name: Build the player list
+        run: |
+          if [ -f players.csv ]; then
+            echo "Using players.csv from the repository"
+            python photo_audit.py --players players.csv --top "${{ inputs.top || 1000 }}" --list-only list.csv
+          else
+            python photo_audit.py --top "${{ inputs.top || 1000 }}" --list-only list.csv
+          fi
+          echo "Players: $(($(wc -l < list.csv) - 1))"
+          head -5 list.csv
+      - id: m
+        run: |
+          n="${{ inputs.shards || 4 }}"
+          echo "shards=$n" >> "$GITHUB_OUTPUT"
+          echo "matrix=$(python -c "import json;print(json.dumps(list(range($n))))")" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with: { name: list, path: list.csv }
+
+  audit:
+    needs: list
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJson(needs.list.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with: { name: list }
+      - name: Restore download cache and progress
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .cache
+            shard_*_progress.jsonl
+          key: audit-${{ matrix.shard }}-of-${{ needs.list.outputs.shards }}-${{ github.run_id }}
+          restore-keys: audit-${{ matrix.shard }}-of-${{ needs.list.outputs.shards }}-
+      - name: Run audit
+        run: |
+          python photo_audit.py --players list.csv --top 100000 \
+            --shard "${{ matrix.shard }}/${{ needs.list.outputs.shards }}" \
+            --out "shard_${{ matrix.shard }}" --site "site_${{ matrix.shard }}"
+      - name: Save download cache and progress
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .cache
+            shard_*_progress.jsonl
+          key: audit-${{ matrix.shard }}-of-${{ needs.list.outputs.shards }}-${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: progress-${{ matrix.shard }}
+          path: shard_${{ matrix.shard }}_progress.jsonl
+          if-no-files-found: warn
+
+  publish:
+    needs: audit
+    if: always()
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with: { pattern: progress-*, merge-multiple: true }
+      - name: Build results page
+        run: python photo_audit.py --report-from "shard_*_progress.jsonl" --site site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: site }
+      - id: deploy
+        uses: actions/deploy-pages@v4
