@@ -4,6 +4,8 @@ Checks whether the profile photos of the top Hendon Mob players are images that 
 
 ## Run it
 
+Hendon Mob pages are behind a Cloudflare bot check that blocks GitHub runners (photo files are not blocked). The player list is therefore committed as `players.csv` (rank,hendon_id,name,image_url), collected from a normal browser session. Refresh it before each audit.
+
 Actions tab, **Photo audit**, **Run workflow**. Defaults: top 1,000 players, 4 parallel runners. A full run takes roughly 1.5 to 3 hours. The results page updates when the run finishes, and the link appears on the run summary.
 
 ## How it works

@@ -215,24 +215,37 @@ def hendon_image(http, pid):
     if not html_:
         return ""
     soup = BeautifulSoup(html_, "html.parser")
+    # Full-size photo link on the profile header. (og:image on Hendon Mob uses
+    # '+' for spaces and 404s, so it is only a last resort.)
+    a = soup.select_one("a.player-profile-photo")
+    if a and a.get("href") and "/pictures/" in a["href"]:
+        return urljoin(HENDON_BASE, a["href"])
+    box = soup.select_one(".player-profile-layout__photo")
+    if box:
+        m = re.search(r"url\(['\"]?([^)'\"]+)", box.get("style", ""))
+        if m:
+            return urljoin(HENDON_BASE, m.group(1))
     og = soup.find("meta", property="og:image")
     if og and og.get("content") and not HENDON_PLACEHOLDER.search(og["content"]):
-        return urljoin(HENDON_BASE, og["content"])
-    # Fallback: the largest-looking img that is not a logo/flag
-    for img in soup.find_all("img"):
-        src = img.get("src") or ""
-        if re.search(r"(picture|photo|player|portrait|avatar)", src, re.I) and \
-           not re.search(r"(flag|logo|icon|sprite)", src, re.I) and \
-           not HENDON_PLACEHOLDER.search(src):
-            return urljoin(HENDON_BASE, src)
+        return urljoin(HENDON_BASE, og["content"].replace("+", "%20"))
     return ""
 
 
 # ---------------------------------------------------------------- pokernews
 
-def pokernews_profile(http, name, slug_hint=None):
+def name_from_picture(url):
+    """Hendon photo files are named '<Player Name> Profile Picture.jpg'."""
+    from urllib.parse import unquote
+    fn = unquote(urlparse(url).path.rsplit("/", 1)[-1])
+    m = re.match(r"(.+?)\s+Profile\s+Picture", fn, re.I)
+    return m.group(1) if m else ""
+
+
+def pokernews_profile(http, name, slug_hint=None, alt_name=""):
     slugs = [slug_hint] if slug_hint else []
     slugs += slug_candidates(name)
+    if alt_name:
+        slugs += [s for s in slug_candidates(alt_name) if s not in slugs]
     for slug in slugs:
         html_ = http.get(PN_PROFILE.format(slug=slug))
         if html_ and "poker-players" in html_:
@@ -384,7 +397,8 @@ def audit(players, http, gallery_pages, out_prefix):
             if hm is None:
                 row.verdict, row.note = "ERROR", "could not load Hendon image"
             else:
-                slug, phtml = pokernews_profile(http, p["name"], p.get("pokernews_slug") or None)
+                slug, phtml = pokernews_profile(http, p["name"], p.get("pokernews_slug") or None,
+                                                name_from_picture(img_url))
                 if not slug:
                     row.verdict, row.note = "NO_PN_PROFILE", "no PokerNews profile found"
                 else:

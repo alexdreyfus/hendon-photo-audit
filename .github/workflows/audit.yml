@@ -36,7 +36,8 @@ jobs:
             echo "Using players.csv from the repository"
             python photo_audit.py --players players.csv --top "${{ inputs.top || 1000 }}" --list-only list.csv
           else
-            python photo_audit.py --top "${{ inputs.top || 1000 }}" --list-only list.csv
+            echo "::error::players.csv is missing. Hendon Mob pages sit behind a Cloudflare bot check that blocks GitHub runners, so the player list must be committed to the repo (columns: rank,hendon_id,name,image_url)."
+            exit 1
           fi
           echo "Players: $(($(wc -l < list.csv) - 1))"
           head -5 list.csv
