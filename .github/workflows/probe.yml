@@ -1,0 +1,15 @@
+name: Probe
+on: workflow_dispatch
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          for u in \
+            "https://pokerdb.thehendonmob.com/pictures/Bryn+Kenney+Profile+Picture.jpg" \
+            "https://pokerdb.thehendonmob.com/ranking/all-time-money-list/" \
+            "https://www.pokernews.com/poker-players/bryn-kenney/" \
+            "https://pnimg.net/w/poker-players/0/660/19ab665571.jpg"; do
+            r=$(curl -s -o /tmp/f -w '%{http_code} %{content_type} %{size_download}' -A "Mozilla/5.0 HendonMob-PhotoAudit/1.0" --max-time 30 "$u")
+            echo "| \`$u\` | $r |" >> "$GITHUB_STEP_SUMMARY"
+          done
