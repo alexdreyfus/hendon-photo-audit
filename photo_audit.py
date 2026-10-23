@@ -210,6 +210,13 @@ def hendon_top_players(http, top):
     return players
 
 
+def guessed_hendon_images(name):
+    """Hendon Mob photo files are usually '/pictures/<Name> Profile Picture.jpg'."""
+    from urllib.parse import quote
+    base = HENDON_BASE + "/pictures/"
+    return [base + quote(f"{name} Profile Picture.jpg"), base + quote(f"{name}.jpg")]
+
+
 def hendon_image(http, pid):
     html_ = http.get(HENDON_PLAYER.format(id=pid))
     if not html_:
@@ -387,16 +394,32 @@ def audit(players, http, gallery_pages, out_prefix):
         row = Row(rank=int(p.get("rank") or i), hendon_id=p["hendon_id"], name=p["name"])
         print(f"[{i}/{len(players)}] {p['name']}", file=sys.stderr)
 
-        img_url = (p.get("image_url") or "").strip() or hendon_image(http, p["hendon_id"])
-        row.hendon_image = img_url
-        if not img_url:
-            row.verdict, row.note = "NO_HENDON_PHOTO", "no photo on Hendon profile"
+        given = (p.get("image_url") or "").strip()
+        hm, img_url, source = None, "", ""
+        if given:
+            cands = [(given.replace(" ", "%20"), "profile")]
         else:
-            data = http.get(img_url, binary=True)
-            hm = load_image(data) if data else None
-            if hm is None:
-                row.verdict, row.note = "ERROR", "could not load Hendon image"
-            else:
+            cands = [(u, "name") for u in guessed_hendon_images(p["name"])]
+        for u, src in cands:
+            data = http.get(u, binary=True)
+            im = load_image(data) if data else None
+            if im is not None:
+                hm, img_url, source = im, u, src
+                break
+        if hm is None and not given:
+            u = hendon_image(http, p["hendon_id"])   # blocked from CI, works locally
+            if u:
+                data = http.get(u, binary=True)
+                hm = load_image(data) if data else None
+                img_url, source = (u, "profile") if hm is not None else ("", "")
+        row.hendon_image = img_url
+        if source == "name":
+            row.note = "photo located by name"
+        if hm is None:
+            row.verdict = "NO_HENDON_PHOTO"
+            row.note = "no photo found (may exist under another filename)" if not given else "could not load Hendon image"
+        else:
+            if True:
                 slug, phtml = pokernews_profile(http, p["name"], p.get("pokernews_slug") or None,
                                                 name_from_picture(img_url))
                 if not slug:
