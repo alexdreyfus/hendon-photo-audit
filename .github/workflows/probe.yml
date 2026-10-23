@@ -6,7 +6,8 @@ jobs:
     steps:
       - run: |
           for u in \
-            "https://pokerdb.thehendonmob.com/pictures/Bryn+Kenney+Profile+Picture.jpg" \
+            "https://pokerdb.thehendonmob.com/pictures/Bryn%20Kenney%20Profile%20Picture.jpg" \
+            "https://pokerdb.thehendonmob.com/pictures/400/Bryn%20Kenney%20Profile%20Picture.jpg" \
             "https://pokerdb.thehendonmob.com/ranking/all-time-money-list/" \
             "https://www.pokernews.com/poker-players/bryn-kenney/" \
             "https://pnimg.net/w/poker-players/0/660/19ab665571.jpg"; do
